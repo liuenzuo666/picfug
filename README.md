@@ -1,5 +1,7 @@
 # picfug
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
 图片文件自动转换 CLI 守护进程。扫描指定目录中的图片，按规则进行缩放、压缩、格式转换，
 在**原目录**生成带规格后缀的新文件（原文件保留），适合图片批量处理、缩略图生成等场景。
 
@@ -149,3 +151,7 @@ cargo test
 
 包含 52 个单元测试 + 6 个防套娃专项集成测试，覆盖命名识别、缩放、迭代压缩、格式转换、
 状态库、防套娃端到端等。
+
+## License
+
+[MIT](./LICENSE)
