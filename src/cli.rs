@@ -212,9 +212,11 @@ pub async fn run_start(args: StartArgs) -> anyhow::Result<()> {
         tokio::spawn(crate::engine::poller::spawn(dirs, watcher_cfg.poll_interval.0, tx));
     }
 
-    // watcher（notify 是同步的，单独线程转发到 tokio channel）
+    // watcher（notify 是同步的，单独线程转发到 tokio channel）。
+    // debouncer 必须保活到进程结束——保存在主循环外，随函数返回 drop。
     let _debouncer = {
-        let (std_rx, debouncer) = crate::engine::watcher::spawn(&directories, watcher_cfg.debounce.0)?;
+        let (std_rx, debouncer) =
+            crate::engine::watcher::spawn(&directories, watcher_cfg.debounce.0)?;
         let tx = tx.clone();
         tokio::task::spawn_blocking(move || {
             while let Ok(paths) = std_rx.recv() {
@@ -223,26 +225,54 @@ pub async fn run_start(args: StartArgs) -> anyhow::Result<()> {
                 }
             }
         });
-        // 注意：debouncer 必须保活，这里用泄漏语义——守护进程生命周期内常驻。
-        // 为简洁，把它装进一个会被一直持有的变量。
-        std::mem::forget(debouncer);
+        debouncer
     };
 
     tracing::info!("守护进程就绪，开始监听");
 
-    // 3. 主循环：消费事件
+    // 3. 主循环：消费事件，同时监听 SIGTERM/SIGINT 优雅退出。
+    //    容器场景下 docker stop 发送 SIGTERM，这里能及时响应，
+    //    避免超时后被 SIGKILL（可能中断正在写入的输出文件）。
     loop {
-        match rx.recv().await {
-            Some(paths) => {
-                let s = process_files(paths, &directories, &db);
-                if s.done + s.failed > 0 {
-                    tracing::info!("处理一批事件: done={} failed={}", s.done, s.failed);
+        tokio::select! {
+            biased; // 优先处理关闭信号
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("收到 SIGINT，准备退出");
+                break;
+            }
+            // Unix SIGTERM（Linux 容器的主要停止信号）。非 unix 平台回退为永不就绪。
+            _ = shutdown_signal() => {
+                tracing::info!("收到终止信号，准备退出");
+                break;
+            }
+            msg = rx.recv() => {
+                match msg {
+                    Some(paths) => {
+                        let s = process_files(paths, &directories, &db);
+                        if s.done + s.failed > 0 {
+                            tracing::info!("处理一批事件: done={} failed={}", s.done, s.failed);
+                        }
+                    }
+                    None => break,
                 }
             }
-            None => break,
         }
     }
+    tracing::info!("守护进程已停止");
     Ok(())
+}
+
+/// 监听 Unix SIGTERM（容器标准停止信号）。非 Unix 平台返回永不就绪的 future。
+#[cfg(unix)]
+async fn shutdown_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = signal(SignalKind::terminate()).expect("安装 SIGTERM 处理失败");
+    term.recv().await;
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() {
+    std::future::pending::<()>().await;
 }
 
 pub async fn run_status(args: ConfigArgs) -> anyhow::Result<()> {

@@ -1,0 +1,54 @@
+# picfug 守护进程部署配置
+#
+# 用法：
+#   1. 准备宿主目录结构（见下方 volumes）
+#   2. 把 config.yaml 放到 ./config/config.yaml（相对路径会基于此解析）
+#   3. docker compose up -d --build
+#   4. docker compose logs -f        查看日志
+#   5. docker compose exec picfug picfug status -c /data/config.yaml   查状态
+#
+# 关键点：
+#   - PUID/PGID 让容器内进程以宿主用户的 UID/GID 运行，写出的文件 owner 正确
+#   - 数据（db/logs）与图片分离挂载，方便单独备份
+
+services:
+  picfug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: picfug:latest
+    container_name: picfug
+    restart: unless-stopped
+
+    # 以宿主用户身份运行，保证写入挂载卷的文件 owner 与宿主一致。
+    # 用宿主的真实 UID:GID（构建时或运行时注入）。
+    user: "${PUID:-65532}:${PGID:-65532}"
+
+    volumes:
+      # 持久化数据：config.yaml、picfug.db、logs（容器内 /data）
+      - ./data:/data
+      # 图片目录：只读挂载源目录、读写挂载输出位置
+      # 注意：picfug 在原地生成输出，所以图片目录必须读写挂载
+      - ${PICS_DIR:-./pics}:/pics:rw
+
+    environment:
+      # 日志级别可通过环境变量覆盖（picfug 用 tracing 的 EnvFilter 读取 RUST_LOG）
+      - RUST_LOG=${LOG_LEVEL:-info}
+
+    # 容器内 config 路径对应挂载点
+    command: ["start", "-c", "/data/config.yaml"]
+
+    healthcheck:
+      # 守护进程没有 HTTP 端口，用进程探活 + db 可读性检查
+      test: ["CMD", "/usr/local/bin/picfug", "status", "-c", "/data/config.yaml"]
+      # distroless 无 shell，用二进制自身退出码判断（status 成功=0 即健康）
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
