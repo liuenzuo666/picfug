@@ -30,7 +30,7 @@ FROM gcr.io/distroless/cc-debian12:nonroot
 
 LABEL org.opencontainers.image.title="picfug" \
       org.opencontainers.image.description="图片文件自动转换 CLI 守护进程" \
-      org.opencontainers.image.source="https://github.com/liuenzuo/picfug"
+      org.opencontainers.image.source="https://github.com/liuenzuo666/picfug"
 
 WORKDIR /app
 
