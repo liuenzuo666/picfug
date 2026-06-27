@@ -1,0 +1,16 @@
+# Rust 构建产物
+/target
+
+# 运行时生成的数据/日志（本地运行产生，不入库）
+*.db
+*.db-shm
+*.db-wal
+/logs
+
+# 本地配置（保留 config.example.yaml 作为模板）
+/config.yaml
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store

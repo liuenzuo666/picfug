@@ -1,0 +1,53 @@
+# picfug 配置示例
+#
+# 所有相对路径基于本配置文件所在目录解析。
+
+log:
+  dir: ./logs
+  level: info              # trace | debug | info | warn | error
+  rotation: daily          # daily | hourly | never
+
+database:
+  path: ./picfug.db
+
+watcher:
+  poll_interval: 30s       # 轮询兜底间隔
+  debounce: 2s             # 文件事件去抖（等大文件写完）
+  worker_concurrency: 4    # 并发转换数
+
+directories:
+  # 一个目录可配置多条规则；recursive 控制是否处理子目录（默认 true）
+  - path: ./photos
+    recursive: true
+    rules:
+      # 缩略图规则：缩小 + 强制 jpeg + 硬上限压缩
+      - name: thumbnail
+        resize:
+          max_width: 300
+          max_height: 300
+          fit: inside        # inside | cover | exact
+          no_upscale: true
+        format: jpeg          # 不指定则沿用源格式
+        size_limit:
+          max_bytes: 102400   # 100KB 硬上限
+          max_quality: 90
+          min_quality: 70
+          step: 5
+        jpeg_bg: "#ffffff"    # 透明转 jpeg 时的背景色
+
+      # 高清规则：保留源格式，仅缩放
+      - name: hd
+        resize:
+          max_width: 1920
+          max_height: 1080
+          fit: inside
+
+  - path: ./screenshots
+    recursive: false
+    rules:
+      - name: webp
+        format: webp
+        resize:
+          max_width: 1280
+          max_height: 0
+          fit: inside
